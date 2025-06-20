@@ -5,7 +5,6 @@ from datetime import datetime
 # --- 페이지 기본 설정 ---
 st.set_page_config(page_title="AI 패션 스타일리스트", page_icon="👗")
 
-
 # --- 사이드바 ---
 with st.sidebar:
     st.header("API 키 설정 🔑")
@@ -16,17 +15,17 @@ with st.sidebar:
     st.header("사용자 정보 🤵‍♀️")
     st.info("정확한 추천을 위해 자세히 입력할수록 좋습니다.")
     
-    # 세션 상태 초기화 (스타일 정보 추가)
+    # 세션 상태 초기화 (스타일 정보 및 퍼스널 컬러 추가)
     if "user_info" not in st.session_state:
         st.session_state.user_info = {
             "gender": "여성",
             "age": "20대",
             "height": "",
             "weight": "",
-            # --- 추가된 패션 정보 ---
             "style_preference": "캐주얼",
             "tpo": "일상",
-            "preferred_color": ""
+            "preferred_color": "",
+            "personal_color": "모름" # --- 추가된 부분: 퍼스널 컬러 ---
         }
 
     with st.form("user_info_form"):
@@ -39,7 +38,7 @@ with st.sidebar:
 
         st.divider()
 
-        # --- 스타일 정보 섹션 (추가된 부분) ---
+        # --- 스타일 정보 섹션 ---
         st.subheader("스타일 정보")
         st.write("더욱 만족스러운 추천을 받아보세요!")
         st.session_state.user_info["style_preference"] = st.selectbox(
@@ -49,6 +48,13 @@ with st.sidebar:
         )
         st.session_state.user_info["tpo"] = st.text_input("TPO (시간, 장소, 상황)", placeholder="예: 주말 데이트, 중요한 회의", value=st.session_state.user_info["tpo"])
         st.session_state.user_info["preferred_color"] = st.text_input("선호/기피 색상", placeholder="예: 파란색 선호, 노란색 기피", value=st.session_state.user_info["preferred_color"])
+        
+        # --- 추가된 부분: 퍼스널 컬러 입력 필드 ---
+        st.session_state.user_info["personal_color"] = st.selectbox(
+            "퍼스널 컬러",
+            ["모름", "봄 웜톤 (Spring Warm)", "여름 쿨톤 (Summer Cool)", "가을 웜톤 (Autumn Warm)", "겨울 쿨톤 (Winter Cool)"],
+            index=["모름", "봄 웜톤 (Spring Warm)", "여름 쿨톤 (Summer Cool)", "가을 웜톤 (Autumn Warm)", "겨울 쿨톤 (Winter Cool)"].index(st.session_state.user_info["personal_color"])
+        )
 
         submitted = st.form_submit_button("정보 저장")
         if submitted:
@@ -76,7 +82,7 @@ prompt = None
 for i, question in enumerate(example_questions):
     if cols[i].button(question, use_container_width=True):
         prompt = question
-        # 버튼 클릭 시 해당 TPO를 사이드바에 자동 반영
+        # 버튼 클릭 시 해당 TPO를 사이드바에 자동 반영 (기존 로직 유지)
         if "데이트" in question: st.session_state.user_info["tpo"] = "주말 데이트"
         elif "소개팅" in question: st.session_state.user_info["tpo"] = "소개팅"
         else: st.session_state.user_info["tpo"] = "일상"
@@ -108,7 +114,7 @@ if prompt:
     with st.chat_message("assistant"):
         with st.spinner("당신만을 위한 스타일을 추천하는 중..."):
             
-            # 사용자 정보 정리 (스타일 정보 포함)
+            # 사용자 정보 정리 (퍼스널 컬러 포함)
             user_info_text = (
                 f"- 성별: {st.session_state.user_info.get('gender') or '정보 없음'}\n"
                 f"- 나이: {st.session_state.user_info.get('age') or '정보 없음'}\n"
@@ -121,12 +127,15 @@ if prompt:
                 user_info_text += f"- 몸무게: {st.session_state.user_info.get('weight')}kg\n"
             if st.session_state.user_info.get('preferred_color'):
                 user_info_text += f"- 선호/기피 색상: {st.session_state.user_info.get('preferred_color')}\n"
+            # --- 추가된 부분: 퍼스널 컬러 정보 포함 ---
+            if st.session_state.user_info.get('personal_color') and st.session_state.user_info['personal_color'] != '모름':
+                user_info_text += f"- 퍼스널 컬러: {st.session_state.user_info.get('personal_color')}\n"
 
-            # 시스템 프롬프트 수정 (계절과 스타일에 집중)
+            # 시스템 프롬프트 수정 (퍼스널 컬러 고려 지시 추가)
             system_prompt = f"""
-            당신은 사용자의 개인 정보, TPO(시간, 장소, 상황), 그리고 패션 취향을 깊이 이해하고 분석하여 현재 계절에 맞는 패션을 추천하는 전문 AI 스타일리스트입니다.
+            당신은 사용자의 개인 정보, TPO(시간, 장소, 상황), 패션 취향, 그리고 **퍼스널 컬러**를 깊이 이해하고 분석하여 현재 계절에 맞는 패션을 추천하는 전문 AI 스타일리스트입니다.
 
-            1.  주어진 '현재 계절'과 '사용자 정보'를 최우선으로 고려합니다.
+            1.  주어진 '현재 계절', '사용자 정보', 특히 **퍼스널 컬러**를 최우선으로 고려합니다. 퍼스널 컬러에 맞는 색상 조합을 적극적으로 제안해주세요.
             2.  '패션 추천' 섹션에서 사용자의 TPO와 선호 스타일에 맞춰, 상의, 하의, 겉옷, 액세서리 등을 조합하여 1~2가지의 완성된 착장을 제안합니다. 각 착장의 스타일과 분위기를 설명해주세요.
             3.  '스타일링 팁' 섹션에서 추천한 옷을 더 잘 소화할 수 있는 팁이나, 다른 아이템과 조합하는 방법을 추가로 제안합니다.
             4.  모든 답변은 매우 친절하고, 전문적이며, 사용자의 자신감을 북돋아 주는 긍정적인 말투를 사용해주세요.
