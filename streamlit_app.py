@@ -77,21 +77,40 @@ client = OpenAI(api_key=openai_api_key)
 
 
 # --- 날씨 정보 함수 ---
+# --- 날씨 정보 함수 (디버깅 코드가 추가된 버전) ---
 def get_weather_forecast(city, api_key):
     """지정된 도시의 내일 날씨 정보를 가져옵니다."""
     try:
+        # 1단계: 도시 이름으로 위도/경도 찾기
         geo_url = f"http://api.openweathermap.org/geo/1.0/direct?q={city}&limit=1&appid={api_key}"
+        
+        # --- 디버깅 코드 ---
+        print(f"DEBUG: 지오코딩 API 요청 URL: {geo_url}")
+        # ------------------
+        
         geo_res = requests.get(geo_url).json()
+        
+        # --- 디버깅 코드 ---
+        print(f"DEBUG: 지오코딩 API 응답: {geo_res}")
+        # ------------------
+        
         if not geo_res:
             return "도시를 찾을 수 없습니다. 영문 도시 이름을 확인해주세요."
         
         lat, lon = geo_res[0]['lat'], geo_res[0]['lon']
 
+        # 2단계: 위도/경도로 날씨 예보 가져오기
         forecast_url = f"https://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=kr"
         forecast_res = requests.get(forecast_url).json()
 
+        # --- 디버깅 코드 ---
+        print(f"DEBUG: 날씨 예보 API 응답: {forecast_res}")
+        # ------------------
+
         if forecast_res.get("cod") != "200":
-             return f"날씨 정보를 가져오는 데 실패했습니다: {forecast_res.get('message')}"
+             # 여기서 에러 메시지를 포함하여 반환
+             error_message = forecast_res.get('message', '알 수 없는 오류')
+             return f"날씨 정보를 가져오는 데 실패했습니다: {error_message}"
 
         tomorrow = (datetime.now() + timedelta(days=1)).date()
         tomorrow_forecasts = [f for f in forecast_res['list'] if datetime.fromtimestamp(f['dt']).date() == tomorrow]
