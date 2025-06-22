@@ -84,12 +84,15 @@ with st.sidebar:
     st.session_state.user_info["personal_color"] = st.selectbox("퍼스널 컬러", ["모름", "봄 웜톤", "여름 쿨톤", "가을 웜톤", "겨울 쿨톤"])
 
 
-# --- 날씨 API 함수 ---
+# --- [수정됨] 날씨 API 함수: 오늘 날씨 처리 로직 개선 ---
 def get_kma_weather_forecast(coords, service_key, target_date):
+    """기상청 단기예보 API로 특정 날짜의 날씨 정보를 가져옵니다."""
     if not service_key:
         return "오류: 기상청 서비스 키가 입력되지 않았습니다."
+
     nx, ny = coords["nx"], coords["ny"]
     now = datetime.now()
+    
     publication_times = [2, 5, 8, 11, 14, 17, 20, 23]
     valid_times = [t for t in publication_times if t <= now.hour]
     if not valid_times:
@@ -100,6 +103,7 @@ def get_kma_weather_forecast(coords, service_key, target_date):
         base_time_hour = max(valid_times)
     base_date = base_day.strftime("%Y%m%d")
     base_time = f"{base_time_hour:02d}00"
+    
     target_date_str = target_date.strftime("%Y%m%d")
     
     url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
@@ -117,10 +121,8 @@ def get_kma_weather_forecast(coords, service_key, target_date):
             return f"기상청 API 오류: {header.get('resultMsg', '알 수 없는 오류')}"
         
         items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        if not items: return "오류: 날씨 정보를 찾을 수 없습니다. (응답 데이터 없음)"
+        if not items: return "오류: 날씨 정보를 찾을 수 없습니다."
 
-        is_today = (target_date == datetime.now().date())
-        
         target_day_weather = {}
         for item in items:
             if item.get("fcstDate") == target_date_str:
@@ -128,30 +130,35 @@ def get_kma_weather_forecast(coords, service_key, target_date):
                 if category:
                     if category not in target_day_weather: target_day_weather[category] = []
                     target_day_weather[category].append(item.get("fcstValue"))
-
-        if not target_day_weather: return f"오류: {target_date.strftime('%Y년 %m월 %d일')}의 예보가 아직 없습니다."
         
-        if not is_today:
-            tmn = next((val for val in target_day_weather.get("TMN", [])), None)
-            tmx = next((val for val in target_day_weather.get("TMX", [])), None)
-            weather_info = f"**기온**: 최저 {tmn or '-'}°C / 최고 {tmx or '-'}°C\n"
-        else:
-            current_hour_str = now.strftime("%H00")
-            current_t1h = None
-            for i, time in enumerate(target_day_weather.get("fcstTime", [])):
-                if time == current_hour_str:
-                    current_t1h = target_day_weather.get("T1H", [])[i]
-                    break
-            weather_info = f"**현재 기온**: {current_t1h or '-'}°C\n"
-
+        if not target_day_weather: return f"오류: {target_date.strftime('%Y년 %m월 %d일')}의 예보가 아직 없습니다."
+            
+        tmn = next((val for val in target_day_weather.get("TMN", [])), None)
+        tmx = next((val for val in target_day_weather.get("TMX", [])), None)
+        
+        # [수정됨] 오늘 날짜의 최저/최고 기온이 없는 경우, 시간대별 기온(TMP)으로 대체
+        if tmn is None or tmx is None:
+            today_temps = [int(t) for t in target_day_weather.get("TMP", [])]
+            if today_temps:
+                tmn = min(today_temps)
+                tmx = max(today_temps)
+        
         sky_values = target_day_weather.get("SKY", [])
         sky_codes = {"1": "맑음", "3": "구름 많음", "4": "흐림"}
         main_sky_code = max(set(sky_values), key=sky_values.count) if sky_values else "1"
         main_sky = sky_codes.get(main_sky_code, "정보 없음")
-        
+
         has_precipitation = any(p != "0" for p in target_day_weather.get("PTY", []))
-        weather_info += (f"**날씨**: {main_sky}\n"
-                         f"**강수 여부**: {'비 또는 눈 소식이 있습니다.' if has_precipitation else '비/눈 소식은 없습니다.'}")
+        if not has_precipitation:
+             pop_values = [int(p) for p in target_day_weather.get("POP", []) if p.isdigit()]
+             if any(p > 40 for p in pop_values):
+                 has_precipitation = True
+
+        weather_info = (
+            f"**기온**: 최저 {tmn or '-'}°C / 최고 {tmx or '-'}°C\n"
+            f"**날씨**: {main_sky}\n"
+            f"**강수 여부**: {'비 또는 눈 소식이 있습니다.' if has_precipitation else '비/눈 소식은 없습니다.'}"
+        )
         return weather_info
         
     except Exception as e:
@@ -162,17 +169,7 @@ def get_kma_weather_forecast(coords, service_key, target_date):
 st.title("👗 AI 패션 스타일리스트")
 st.write("내 정보와 원하는 날짜의 날씨에 맞는 스타일을 추천받아보세요.")
 
-# 채팅 기록 초기화
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "안녕하세요! 당신만의 스타일리스트가 되어드릴게요. 어떤 도움이 필요하세요?"}]
-
-# 채팅 기록 표시
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# --- [수정됨] 대표 질문 버튼을 표시하는 함수 ---
-def display_action_buttons():
+def display_and_handle_buttons():
     st.subheader("어떤 추천을 원하세요? 👇")
     example_questions = ["패션 추천받기 👕", "데이트룩 추천 💖", "소개팅룩 추천해줘 ✨"]
     cols = st.columns(len(example_questions))
@@ -185,24 +182,28 @@ def display_action_buttons():
             return question
     return None
 
-# --- AI 응답 처리 로직 ---
-# 프롬프트가 있을 경우에만 실행
-prompt = st.chat_input("메시지를 입력하세요...") or display_action_buttons()
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "안녕하세요! 당신만의 스타일리스트가 되어드릴게요. 어떤 도움이 필요하세요?"}]
+
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+prompt = display_and_handle_buttons()
+if chat_input := st.chat_input("궁금한 스타일을 직접 물어보세요..."):
+    prompt = chat_input
 
 if prompt:
-    # API 키 확인
     if not openai_api_key or not kma_service_key:
         st.error("사이드바에서 OpenAI API 키와 기상청 서비스 키를 모두 입력해주세요.")
         st.stop()
     
     client = OpenAI(api_key=openai_api_key)
 
-    # 사용자 메시지 저장 및 표시
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AI 응답 생성 및 표시
     with st.chat_message("assistant"):
         with st.spinner("선택하신 날짜의 날씨를 확인하고, 맞춤 스타일을 추천하는 중..."):
             sido = st.session_state.user_info["sido"]
@@ -227,9 +228,10 @@ if prompt:
             
             system_prompt = f"""
             당신은 사용자의 개인 정보, TPO, 패션 취향, 퍼스널 컬러와 **선택된 날짜의 날씨**를 종합 분석하여 패션을 추천하는 전문 AI 스타일리스트입니다.
+
             **[답변 생성 규칙]**
             1.  **답변 시작**: 가장 먼저, 어떤 사용자의 정보를 바탕으로 추천하는지 핵심만 요약해서 알려주세요.
-            2.  **날씨 정보**: '**{location_name}**의 **{target_date.strftime('%Y년 %m월 %d일')}** 날씨 정보'라는 제목으로 섹션을 만들고, 그 아래에 전달받은 날씨 데이터를 보여주세요.
+            2.  **날씨 정보**: '**{location_name}**의 **{target_date.strftime('%Y년 %m월 %d일')}** 날씨 정보'라는 제목으로 섹션을 만들고, 그 아래에 전달받은 날씨 데이터를 보여주세요. **날씨 정보는 하루 동안의 기온 변화(최저/최고 기온)를 기준으로 설명합니다.**
             3.  **패션 추천**: '패션 추천' 섹션에서 날씨, TPO, 퍼스널 컬러 등을 모두 고려하여 1~2가지의 완성된 착장을 제안합니다.
             4.  **스타일링 팁**: '스타일링 팁' 섹션에서 추가적인 팁을 제안합니다.
             5.  **우산 안내 (조건부)**: 만약 날씨 정보에 '**비 또는 눈 소식이 있습니다.**' 라는 내용이 포함되어 있다면, '우산 챙기세요! ☔️' 라는 섹션을 추가하고 상냥하게 알려주세요.
@@ -254,8 +256,6 @@ if prompt:
                 )
                 response = st.write_stream(stream)
                 st.session_state.messages.append({"role": "assistant", "content": response})
-                
-                # --- [수정됨] 응답 후 버튼을 다시 표시하기 위해 스크립트 재실행 ---
                 st.rerun()
 
             except Exception as e:
