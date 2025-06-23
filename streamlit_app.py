@@ -39,7 +39,7 @@ with st.sidebar:
         "날짜 선택",
         value=st.session_state.user_info.get("date", datetime.now().date()),
         min_value=datetime.now().date(),
-        max_value=datetime.now().date() + timedelta(days=5),
+        max_value=datetime.now().date() + timedelta(days=4),
         help="오늘부터 최대 5일 후까지의 날씨를 조회할 수 있습니다."
     )
     st.session_state.user_info["date"] = selected_date
