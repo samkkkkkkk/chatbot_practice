@@ -17,3 +17,15 @@ A simple Streamlit app that shows how to build a chatbot using OpenAI's GPT-3.5.
    ```
    $ streamlit run streamlit_app.py
    ```
+
+3. 기상청 API Key 발급받기
+
+   ```
+   기상청_단기예보 ((구)_동네예보) 조회서비스 
+   https://www.data.go.kr/data/15084084/openapi.do
+   ```
+   활용신청 하기
+   
+   마이페이지 -> 개인 API인증키 (인증키코드 복사(Decoding))
+
+
